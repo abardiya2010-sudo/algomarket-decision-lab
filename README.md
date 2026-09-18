@@ -1,4 +1,5 @@
 # AlgoMarket Decision Lab ⚡
+[🚀 **Click Here to Launch Live App**](https://YOUR-STREAMLIT-URL.streamlit.app)
 
 An interactive microeconomic simulation platform evaluating tacit algorithmic collusion, econometric price-discrimination auditing, and regulatory welfare design.
 
