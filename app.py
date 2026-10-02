@@ -22,6 +22,8 @@ st.set_page_config(
 
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = True
+if "theme_choice" not in st.session_state:
+    st.session_state.theme_choice = "Dark"
 if "page" not in st.session_state:
     st.session_state.page = "Start Here"
 if "results" not in st.session_state:
@@ -37,6 +39,7 @@ LIGHT = {
     "amber": "#D97706", "blue": "#2563EB", "pink": "#DB2777", "red": "#E11D48",
     "green": "#16A34A", "purple": "#7C3AED", "plot": "plotly_white",
     "plot_paper": "#FFFFFF", "plot_area": "#FFFFFF", "grid": "#EEF1F7",
+    "hero": "linear-gradient(135deg,#FFFFFF 0%,#EEF5FF 100%)",
 }
 DARK = {
     "bg": "#0B0E14", "panel": "#141922", "panel2": "#191F2B", "sidebar": "#0F1319",
@@ -44,19 +47,25 @@ DARK = {
     "amber": "#F5B84E", "blue": "#5B9DF9", "pink": "#F472B6", "red": "#FB7185",
     "green": "#4ADE80", "purple": "#C4B5FD", "plot": "plotly_dark",
     "plot_paper": "#141922", "plot_area": "#0B0E14", "grid": "#232A38",
+    "hero": "linear-gradient(135deg,#151D2B 0%,#1D1727 100%)",
 }
+st.session_state.dark_mode = st.session_state.theme_choice == "Dark"
 T = DARK if st.session_state.dark_mode else LIGHT
 
 st.markdown(
     f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
+    :root {{ color-scheme:{'dark' if st.session_state.dark_mode else 'light'}; }}
     .stApp {{ background:{T['bg']}; color:{T['text']}; font-family:Inter,sans-serif; }}
+    [data-testid="stAppViewContainer"], [data-testid="stHeader"] {{ background:{T['bg']} !important; }}
     h1,h2,h3,h4 {{ font-family:Poppins,sans-serif !important; color:{T['heading']} !important; }}
-    .hero {{ background:linear-gradient(135deg,{T['panel']} 0%,#1b2538 100%); border:1px solid {T['border']}; border-radius:20px; padding:2rem 2.2rem; margin-bottom:1.1rem; }}
+    p, li, label, [data-testid="stMarkdownContainer"] {{ color:{T['text']}; }}
+    .hero {{ background:{T['hero']}; border:1px solid {T['border']}; border-radius:20px; padding:2rem 2.2rem; margin-bottom:1.1rem; }}
     .hero h1 {{ margin:0 0 .45rem 0; font-size:2.2rem; }}
     .hero p {{ color:{T['muted']}; max-width:900px; font-size:1.05rem; line-height:1.7; margin:0; }}
     .card {{ background:{T['panel']}; border:1px solid {T['border']}; border-radius:16px; padding:1.1rem 1.25rem; margin:.6rem 0; box-shadow:0 3px 15px rgba(0,0,0,.08); }}
+    .card h3 {{ margin-top:0; }}
     .metric {{ background:{T['panel']}; border:1px solid {T['border']}; border-radius:14px; padding:.9rem .75rem; text-align:center; min-height:90px; }}
     .metric-label {{ color:{T['muted']}; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; font-weight:700; }}
     .metric-value {{ color:{T['heading']}; font-size:1.35rem; font-weight:700; margin-top:.3rem; }}
@@ -66,6 +75,15 @@ st.markdown(
     .danger {{ border-left-color:{T['red']}; }}
     .small {{ color:{T['muted']}; font-size:.86rem; line-height:1.55; }}
     section[data-testid="stSidebar"] {{ background:{T['sidebar']}; border-right:1px solid {T['border']}; }}
+    section[data-testid="stSidebar"] * {{ color:{T['text']}; }}
+    section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+    section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ color:{T['text']} !important; }}
+    section[data-testid="stSidebar"] input, section[data-testid="stSidebar"] textarea {{ color:{T['text']} !important; background:{T['panel']} !important; }}
+    section[data-testid="stSidebar"] button {{ border-color:{T['border']} !important; color:{T['text']} !important; }}
+    section[data-testid="stSidebar"] button[kind="primary"] {{ background:linear-gradient(135deg,{T['blue']},{T['purple']}) !important; color:#fff !important; border:0 !important; }}
+    [data-testid="stMetricValue"] {{ color:{T['heading']} !important; }}
+    .stCaption, [data-testid="stCaptionContainer"] {{ color:{T['muted']} !important; }}
+    div[data-baseweb="select"] > div, div[data-baseweb="input"] > div {{ background:{T['panel']} !important; border-color:{T['border']} !important; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -113,6 +131,15 @@ def run_history_panel():
 
 def set_page(page: str):
     st.session_state.page = page
+
+
+def sync_preset(prefix: str, selected: str, values: dict):
+    """Apply a preset once when the user changes it, without overwriting later edits."""
+    marker = f"{prefix}_last_preset"
+    if st.session_state.get(marker) != selected:
+        for key, value in values.items():
+            st.session_state[key] = value
+        st.session_state[marker] = selected
 
 
 def chart_layout(fig, title: str, height: int = 420):
@@ -240,16 +267,17 @@ def simulate_collusion(
 
 def collusion_replications(params: dict, replications: int):
     outputs = []
+    base_seed = int(params.pop("seed"))
     for i in range(replications):
-        outputs.append(simulate_collusion(**params, seed=params["seed"] + i))
+        outputs.append(simulate_collusion(**params, seed=base_seed + i))
     prices = np.array([x["final_price"] for x in outputs])
     scores = np.array([x["collusion_score"] for x in outputs])
     return outputs, prices, scores
 
 
 def render_collusion():
-    st.markdown('<div class="hero"><h1>Collusion Risk Lab</h1><p>Can independent pricing bots learn to keep prices high without communicating? Run a reproducible experiment, inspect the mechanism, and test which policy levers change the outcome.</p></div>', unsafe_allow_html=True)
-    takeaway("Question", "Do independent learning agents converge toward a high-price equilibrium, and can simple oversight weaken that outcome?")
+    st.markdown('<div class="hero"><h1>Collusion Risk Lab</h1><p>Can pricing bots quietly learn to keep prices high—even when nobody tells them to cooperate? Start with a ready-made scenario, watch the market evolve, then test the rule that changes the story.</p></div>', unsafe_allow_html=True)
+    takeaway("Your mission", "Find out whether the bots settle into competition or discover a high-price pattern on their own. Then change one policy lever and see whether the market responds.")
 
     with st.sidebar:
         st.header("Experiment setup")
@@ -260,16 +288,17 @@ def render_collusion():
             "Delayed observation": (2, 10000, 3, .0, 40, 0),
         }
         d = defaults.get(preset, (2, 10000, 0, .0, 40, 0))
-        bots = st.slider("Pricing bots", 2, 4, d[0])
-        rounds = st.slider("Training rounds", 3000, 25000, d[1], step=1000)
-        latency = st.slider("Observation delay", 0, 5, d[2])
-        audit = st.slider("Audit probability", 0.0, .5, d[3], step=.05)
-        fine = st.slider("Audit fine", 0, 120, d[4], step=10)
-        jump = st.slider("Maximum price increase per round", 0.0, 8.0, float(d[5]), step=.5)
-        ceiling = st.slider("Hard price ceiling; 0 = none", 0.0, 26.0, 0.0, step=.5)
-        seed = st.number_input("Random seed", min_value=0, max_value=999999, value=42, step=1)
-        reps = st.select_slider("Repeated runs", options=[1, 5, 10, 25], value=10)
-        run = st.button("Run experiment", type="primary", use_container_width=True)
+        sync_preset("collusion", preset, {"col_bots": d[0], "col_rounds": d[1], "col_latency": d[2], "col_audit": d[3], "col_fine": d[4], "col_jump": float(d[5])})
+        bots = st.slider("Pricing bots", 2, 4, key="col_bots")
+        rounds = st.slider("Training rounds", 3000, 18000, step=1000, key="col_rounds", help="More rounds give the bots more time to learn, but the final result is evaluated over the last 500 rounds.")
+        latency = st.slider("Observation delay", 0, 5, key="col_latency")
+        audit = st.slider("Audit probability", 0.0, .5, step=.05, key="col_audit")
+        fine = st.slider("Audit fine", 0, 120, step=10, key="col_fine")
+        jump = st.slider("Maximum price increase per round", 0.0, 8.0, step=.5, key="col_jump")
+        ceiling = st.slider("Hard price ceiling; 0 = none", 0.0, 26.0, 0.0, step=.5, key="col_ceiling")
+        seed = st.number_input("Random seed", min_value=0, max_value=999999, value=42, step=1, key="col_seed")
+        reps = st.select_slider("Repeated runs", options=[1, 3, 5, 10, 25], value=5, key="col_reps", help="Repeated runs show whether the result is a pattern or a lucky outcome.")
+        run = st.button("Run this experiment", type="primary", use_container_width=True)
 
     params = dict(num_agents=bots, episodes=rounds, latency=latency,
                   audit_probability=audit, audit_fine=float(fine), max_jump=jump,
@@ -285,7 +314,7 @@ def render_collusion():
 
     result = st.session_state.results.get("collusion")
     if not result:
-        st.info("Choose a preset or adjust the controls, then run the experiment.")
+        st.info("Pick a scenario on the left, then press **Run this experiment**. Your result will stay here while you explore.")
         return
 
     out = result["output"]
@@ -298,7 +327,7 @@ def render_collusion():
     with cols[2]: metric_card("Collusive runs", f"{collusive_share:.0%}")
     with cols[3]: metric_card("Verdict", verdict, color)
 
-    takeaway("Result", f"Across {result['replications']} run(s), the median final price was ${np.median(result['prices']):.2f}, compared with a competitive benchmark of ${out['competitive_price']:.2f}. The bots were classified as collusive in {collusive_share:.0%} of runs.", "danger" if collusive_share >= .5 else "success")
+    takeaway("What happened?", f"Across {result['replications']} run(s), the typical final price was ${np.median(result['prices']):.2f}, compared with a competitive benchmark of ${out['competitive_price']:.2f}. The bots crossed our collusion threshold in {collusive_share:.0%} of runs. Try changing only the audit probability or observation delay to see what breaks the pattern.", "danger" if collusive_share >= .5 else "success")
 
     fig = go.Figure()
     smoothed = out["smoothed"]
@@ -333,8 +362,12 @@ def simulate_audit(base: float, biases: Tuple[float, ...], noise: float, visits:
         "Premium payment": rng.integers(0, 2, visits),
         "Deep browsing": rng.uniform(0, 1, visits),
         "Synthetic sensitive proxy": rng.integers(0, 2, visits),
+        "Dress proxy": rng.integers(0, 2, visits),
+        "Speech proxy": rng.integers(0, 2, visits),
+        "Posture proxy": rng.integers(0, 2, visits),
+        "Facial-confidence proxy": rng.integers(0, 2, visits),
     }
-    prices = base + biases[0] * traits["Mobile"] + biases[1] * traits["Location tier"] + biases[2] * traits["Returning"] + biases[3] * traits["Peak time"] + biases[4] * traits["Premium payment"] + biases[5] * traits["Deep browsing"] + biases[6] * traits["Synthetic sensitive proxy"] + rng.normal(0, noise, visits)
+    prices = (base + biases[0] * traits["Mobile"] + biases[1] * traits["Location tier"] + biases[2] * traits["Returning"] + biases[3] * traits["Peak time"] + biases[4] * traits["Premium payment"] + biases[5] * traits["Deep browsing"] + biases[6] * traits["Synthetic sensitive proxy"] + biases[7] * traits["Dress proxy"] + biases[8] * traits["Speech proxy"] + biases[9] * traits["Posture proxy"] + biases[10] * traits["Facial-confidence proxy"] + rng.normal(0, noise, visits))
     return traits, np.maximum(prices, 1.0)
 
 
@@ -351,20 +384,23 @@ def welch_stats(a, b):
 
 
 def render_auditor():
-    st.markdown('<div class="hero"><h1>Price Discrimination Auditor</h1><p>Generate a synthetic pricing dataset, compare groups, and inspect which estimated effects remain detectable after controlling for other signals.</p></div>', unsafe_allow_html=True)
-    takeaway("Important framing", "This is a synthetic audit exercise. A detected statistical gap does not by itself prove unlawful discrimination, intent, or causation.", "warning")
+    st.markdown('<div class="hero"><h1>Price Discrimination Auditor</h1><p>Imagine the same product being quoted at different prices. Create a synthetic market, investigate the gaps, and learn which signals deserve a closer look after we account for noise and multiple testing.</p></div>', unsafe_allow_html=True)
+    takeaway("A careful investigator asks two questions", "Is the price gap large enough to detect, and does it remain after other signals are considered? This synthetic exercise can flag patterns for investigation—it cannot prove unlawful discrimination, intent, or causation.", "warning")
     with st.sidebar:
         st.header("Audit setup")
         preset = st.selectbox("Preset", ["Custom", "No true bias", "Strong sensitive-proxy bias"])
         base = st.slider("Base price ($)", 20, 200, 100)
         if preset == "No true bias":
-            default_biases = (0, 0, 0, 0, 0, 0, 0)
+            default_biases = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         elif preset == "Strong sensitive-proxy bias":
-            default_biases = (5, 3, -4, 4, 5, 6, 14)
+            default_biases = (5, 3, -4, 4, 5, 6, 14, 8, 7, 5, 9)
         else:
-            default_biases = (6, 3, -4, 3, 4, 5, 8)
-        names = ["Mobile bias", "Location-tier bias", "Returning bias", "Peak-time bias", "Premium-payment bias", "Browsing bias", "Sensitive-proxy bias"]
-        biases = tuple(st.slider(n, -20, 20, int(v), key=f"audit_{i}") for i, (n, v) in enumerate(zip(names, default_biases)))
+            default_biases = (6, 3, -4, 3, 4, 5, 8, 3, 3, 2, 4)
+        names = ["Mobile bias", "Location-tier bias", "Returning bias", "Peak-time bias", "Premium-payment bias", "Browsing bias", "Sensitive-proxy bias", "Dress-proxy bias", "Speech-proxy bias", "Posture-proxy bias", "Facial-confidence bias"]
+        sync_preset("audit", preset, {f"audit_{i}": int(v) for i, v in enumerate(default_biases)})
+        with st.expander("Advanced signals · synthetic proxies", expanded=False):
+            st.caption("These variables are synthetic teaching devices. They are not recommendations for real-world pricing.")
+            biases = tuple(st.slider(n, -20, 20, int(v), key=f"audit_{i}") for i, (n, v) in enumerate(zip(names, default_biases)))
         noise = st.slider("Random noise ($)", 0, 15, 4)
         visits = st.slider("Synthetic visits", 400, 8000, 2500, step=100)
         seed = st.number_input("Random seed", 0, 999999, 42, key="audit_seed")
@@ -381,6 +417,10 @@ def render_auditor():
             ("Basic vs premium payment", traits["Premium payment"] == 0, traits["Premium payment"] == 1),
             ("Low vs high browsing", traits["Deep browsing"] < .5, traits["Deep browsing"] >= .5),
             ("Synthetic proxy A vs B", traits["Synthetic sensitive proxy"] == 0, traits["Synthetic sensitive proxy"] == 1),
+            ("Dress proxy A vs B", traits["Dress proxy"] == 0, traits["Dress proxy"] == 1),
+            ("Speech proxy A vs B", traits["Speech proxy"] == 0, traits["Speech proxy"] == 1),
+            ("Posture proxy A vs B", traits["Posture proxy"] == 0, traits["Posture proxy"] == 1),
+            ("Facial-confidence proxy A vs B", traits["Facial-confidence proxy"] == 0, traits["Facial-confidence proxy"] == 1),
         ]
         for label, a, b in pairs:
             s = welch_stats(prices[a], prices[b])
@@ -390,7 +430,7 @@ def render_auditor():
 
     result = st.session_state.results.get("audit")
     if not result:
-        st.info("Choose a preset or adjust the audit settings, then run the audit.")
+        st.info("Choose a scenario or tune the signals, then press **Run audit** to create your synthetic shopper sample.")
         return
     df = result["results"]
     significant = int(df["Bonferroni significant"].sum())
@@ -398,7 +438,7 @@ def render_auditor():
     with c[0]: metric_card("Synthetic visits", f"{len(result['prices']):,}")
     with c[1]: metric_card("Adjusted signals", str(significant))
     with c[2]: metric_card("Seed", str(result["seed"]))
-    takeaway("How to interpret this", f"{significant} of {len(df)} tested comparisons remain detectable after a simple Bonferroni correction. Treat this as evidence for further investigation, not as a final legal or causal conclusion.")
+    takeaway("What the audit found", f"{significant} of {len(df)} tested comparisons remain detectable after a simple Bonferroni correction. That is a reason to investigate the data more deeply—not a final legal or causal conclusion.")
 
     plot_df = df.sort_values("diff")
     fig = go.Figure(go.Bar(
@@ -436,20 +476,21 @@ def individual_outcome(price: float, collusion: float, income: float, confidence
 
 
 def render_regulation():
-    st.markdown('<div class="hero"><h1>Regulatory Design Lab</h1><p>Trace the complete chain from a policy rule to firm behavior to the outcome experienced by an individual consumer.</p></div>', unsafe_allow_html=True)
-    takeaway("Causal chain", "A rule only helps people if it changes firm behavior, and firm behavior only helps people if the resulting price improves the consumer outcome.")
+    st.markdown('<div class="hero"><h1>Regulatory Design Lab</h1><p>Design a rule, watch firms adapt, and follow the consequences all the way to one person’s shopping experience. This is where policy stops being an abstract setting and becomes a lived outcome.</p></div>', unsafe_allow_html=True)
+    takeaway("Follow the chain", "Policy changes firm incentives. Firm behavior changes the price. The price changes what a person can buy, keep, and afford. Use the controls to see where that chain strengthens—or breaks.")
     with st.sidebar:
         st.header("Market and policy")
         preset = st.selectbox("Preset", ["Custom", "Light-touch oversight", "Strict regulation"])
         defaults = {"Light-touch oversight": (2, .15, 40, 2, 0), "Strict regulation": (3, .35, 80, 1, 8)}
         d = defaults.get(preset, (0, 0, 40, 0, 0))
-        agents = st.slider("Number of firms", 2, 5, 3)
-        rounds = st.slider("Training rounds", 3000, 18000, 9000, step=1000)
-        latency = st.slider("Observation delay", 0, 6, d[0])
-        audit = st.slider("Audit probability", 0.0, .5, float(d[1]), step=.05)
-        fine = st.slider("Audit fine", 0, 120, int(d[2]), step=10)
-        jump = st.slider("Price increase cap", 0.0, 8.0, float(d[3]), step=.5)
-        ceiling = st.slider("Price ceiling; 0 = none", 0.0, 25.0, float(d[4]), step=.5)
+        sync_preset("regulation", preset, {"reg_agents": 3, "reg_rounds": 9000, "reg_latency": d[0], "reg_audit": float(d[1]), "reg_fine": int(d[2]), "reg_jump": float(d[3]), "reg_ceiling": float(d[4])})
+        agents = st.slider("Number of firms", 2, 5, key="reg_agents")
+        rounds = st.slider("Training rounds", 3000, 18000, step=1000, key="reg_rounds")
+        latency = st.slider("Observation delay", 0, 6, key="reg_latency")
+        audit = st.slider("Audit probability", 0.0, .5, step=.05, key="reg_audit")
+        fine = st.slider("Audit fine", 0, 120, step=10, key="reg_fine")
+        jump = st.slider("Price increase cap", 0.0, 8.0, step=.5, key="reg_jump")
+        ceiling = st.slider("Price ceiling; 0 = none", 0.0, 25.0, step=.5, key="reg_ceiling")
         st.header("Consumer profile")
         income = st.slider("Income index", 20, 150, 100)
         confidence = st.slider("Confidence", 10, 100, 65)
@@ -467,14 +508,14 @@ def render_regulation():
 
     result = st.session_state.results.get("regulation")
     if not result:
-        st.info("Choose a policy preset or adjust the controls, then run the experiment.")
+        st.info("Choose a policy scenario or adjust the controls, then press **Run policy experiment** to follow the full chain.")
         return
     sim, ind = result["sim"], result["individual"]
     cols = st.columns(5)
     for c, label, value in zip(cols, ["Market price", "Collusion score", "Price faced", "Quantity", "Welfare"], [f"${sim['final_price']:.2f}", f"{sim['collusion_score']:.0f}/100", f"${ind['price']:.2f}", f"{ind['quantity']:.1f}", f"{ind['welfare']:.0f}/100"]):
         with c: metric_card(label, value)
     tone = "danger" if sim["collusion_score"] >= 60 else "success"
-    takeaway("Interpretation", f"The firms ended at a collusion score of {sim['collusion_score']:.0f}/100. The selected consumer faces ${ind['price']:.2f}, buys {ind['quantity']:.1f} units, and receives an illustrative welfare score of {ind['welfare']:.0f}/100.", tone)
+    takeaway("From rule to real life", f"The firms ended at a collusion score of {sim['collusion_score']:.0f}/100. The selected consumer faces ${ind['price']:.2f}, buys {ind['quantity']:.1f} units, and receives an illustrative welfare score of {ind['welfare']:.0f}/100. Now change one rule or one part of the consumer profile and watch which link moves first.", tone)
 
     fig = go.Figure()
     x = np.arange(len(sim["smoothed"])) + 250
@@ -489,7 +530,7 @@ def render_regulation():
 # Comparison, calibration, notes, and navigation
 # ============================================================
 def render_comparison():
-    st.markdown('<div class="hero"><h1>Policy Comparison</h1><p>Compare preset regimes using the same market and the same random seed. The goal is to expose trade-offs, not to declare one universal winner.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero"><h1>Policy Comparison</h1><p>Three regimes. One market. A fair comparison. See what each approach buys you in consumer welfare, what it costs to enforce, and where the trade-offs become impossible to ignore.</p></div>', unsafe_allow_html=True)
     with st.sidebar:
         agents = st.slider("Number of firms", 2, 5, 3, key="cmp_agents")
         rounds = st.slider("Training rounds", 3000, 16000, 8000, step=1000, key="cmp_rounds")
@@ -504,7 +545,7 @@ def render_comparison():
         st.session_state.results["comparison"] = pd.DataFrame(rows)
     df = st.session_state.results.get("comparison")
     if df is None:
-        st.info("Run the comparison to see the trade-offs.")
+        st.info("Press **Compare regimes** to put the three approaches on the same playing field.")
         return
     c = st.columns(3)
     with c[0]: metric_card("Lowest price", df.loc[df["Market price"].idxmin(), "Regime"])
@@ -519,7 +560,7 @@ def render_comparison():
 
 
 def render_calibration():
-    st.markdown('<div class="hero"><h1>Empirical Calibration</h1><p>Explore how different illustrative elasticity assumptions change the shape of a linear demand curve. These are teaching calibrations, not replications of a particular market.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero"><h1>Empirical Calibration</h1><p>Markets do not all react to price changes in the same way. Explore how different elasticity assumptions reshape demand—and why the same policy can feel very different in gasoline, airfare, housing, or online retail.</p></div>', unsafe_allow_html=True)
     presets = {"Retail gasoline": -.3, "Airline fares": -1.2, "E-commerce": -1.8, "Rental housing": -.5}
     market = st.selectbox("Market type", list(presets))
     elasticity = presets[market]
@@ -536,7 +577,7 @@ def render_calibration():
 
 
 def render_notes():
-    st.markdown('<div class="hero"><h1>Research Notes</h1><p>The simulator is designed to make mechanisms visible. It is not a forecast, legal determination, or empirical replication.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero"><h1>Research Notes</h1><p>Want to go deeper? These notes connect the experiments to the ideas behind them, explain what the model leaves out, and show how to use the results responsibly.</p></div>', unsafe_allow_html=True)
     tabs = st.tabs(["Mechanisms", "Limitations", "Glossary"])
     with tabs[0]:
         st.markdown("""
@@ -571,14 +612,44 @@ def render_notes():
             st.markdown(f"**{term}** — {definition}")
 
 
+def render_reading_guide():
+    st.markdown('<div class="hero"><h1>How to Read the Lab</h1><p>Charts are not just decoration here. Each one answers a different question about behavior, evidence, or impact.</p></div>', unsafe_allow_html=True)
+    sections = [
+        ("Price paths", "Follow the colored lines from left to right. The grey benchmark is the competitive price; the red benchmark is the cartel-style reference. A sustained move toward the red line is more interesting than a short-lived spike."),
+        ("Repeated-run summaries", "One run can be lucky. The repeated-run cards tell you how often the pattern appears across different random seeds. A strong claim should survive more than one seed."),
+        ("Audit effect chart", "Each bar is an estimated difference between two synthetic groups. The whiskers are 95% confidence intervals. Red indicates a signal that remains detectable after the simple multiple-testing correction."),
+        ("Policy trade-off chart", "A point higher on the chart delivers more illustrative welfare; a point farther right costs more relative enforcement effort. There is no automatic winner: the best choice depends on the objective you value."),
+        ("Welfare outputs", "Price, quantity, surplus, residual income, and welfare are connected but not identical. A lower price can help, but the size of the benefit depends on the consumer profile and the model assumptions."),
+    ]
+    for title, body in sections:
+        st.markdown(f'<div class="card"><h3>{title}</h3><p>{body}</p></div>', unsafe_allow_html=True)
+    takeaway("A useful habit", "Before changing several controls, write down your prediction. After the run, ask: did the result match it, and which assumption explains the difference?")
+
+
+def render_overview():
+    st.markdown('<div class="hero"><h1>Project Overview</h1><p>AlgoMarket is an interactive decision lab about algorithmic markets, evidence, and the policy choices that shape consumer outcomes.</p></div>', unsafe_allow_html=True)
+    st.markdown("### The story across the modules")
+    overview = [
+        ("01 · Collusion Risk Lab", "Independent pricing bots can learn high-price patterns through repeated interaction. This module lets you watch that pattern emerge and test whether delay, audits, fines, or price caps change it."),
+        ("02 · Price Discrimination Auditor", "Synthetic shopper data lets you compare groups, quantify uncertainty, and see why a raw price gap is only the beginning of a careful investigation."),
+        ("03 · Regulatory Design Lab", "Policy becomes meaningful when it changes firm incentives and then changes what an individual can buy, keep, or afford."),
+        ("04 · Policy Comparison", "The strongest rule is not automatically the best rule. Compare welfare, market price, collusion, and relative enforcement cost together."),
+        ("05 · Empirical Calibration", "Elasticity assumptions change how strongly quantity responds to price. Calibration helps you understand why the same policy can behave differently in different markets."),
+    ]
+    for title, body in overview:
+        st.markdown(f'<div class="card"><h3>{title}</h3><p>{body}</p></div>', unsafe_allow_html=True)
+    st.markdown("### Design principles")
+    st.markdown("**Explore before you conclude.** Results are signals to investigate, not answers that remove judgment. **Compare, do not cherry-pick.** Use seeds, repeated runs, and sensitivity checks. **Keep the person in view.** A market outcome matters because it changes real choices and constraints.")
+
+
 def render_start():
-    st.markdown('<div class="hero"><h1>AlgoMarket Decision Lab</h1><p>Explore how pricing algorithms affect markets, how statistical audits detect unequal prices, and which policy choices improve consumer outcomes.</p></div>', unsafe_allow_html=True)
-    takeaway("Recommended path", "Start with collusion, change one policy variable, then follow the result into the Regulatory Design Lab. You can return to the same experiment because every run has a seed and configuration.")
+    st.markdown('<div class="hero"><h1>AlgoMarket Decision Lab</h1><p>Markets are shaped by the rules algorithms learn, the signals firms observe, and the choices regulators make. Run the experiments, challenge the assumptions, and see the human consequences behind the headline number.</p></div>', unsafe_allow_html=True)
+    takeaway("A good first journey", "Start with collusion, change one policy variable, then follow the result into the Regulatory Design Lab. Every run has a seed and configuration, so you can come back, compare, and build your own evidence trail.")
     cols = st.columns(3)
     cards = [
-        ("See collusion in 2 minutes", "Run independent pricing bots and inspect whether prices rise together.", "Collusion Risk Lab"),
-        ("Audit a synthetic market", "Test whether price differences remain detectable after multiple-testing correction.", "Price Discrimination Auditor"),
-        ("Design a policy", "Trace a rule from firm behavior to an individual consumer's welfare.", "Regulatory Design Lab"),
+        ("Catch the bots coordinating", "Run independent pricing bots and see whether they quietly drift toward a high-price pattern.", "Collusion Risk Lab"),
+        ("Become the pricing investigator", "Create a synthetic shopper sample and find out which price gaps survive a careful audit.", "Price Discrimination Auditor"),
+        ("Design a rule that matters", "Change policy, watch firms respond, and follow the consequences to an individual consumer.", "Regulatory Design Lab"),
     ]
     for col, (title, body, page) in zip(cols, cards):
         with col:
@@ -596,21 +667,21 @@ def render_start():
 PAGES = [
     "Start Here", "Collusion Risk Lab", "Price Discrimination Auditor",
     "Regulatory Design Lab", "Policy Comparison", "Empirical Calibration",
-    "Research Notes",
+    "Research Notes", "How to Read the Lab", "Project Overview",
 ]
 
 with st.sidebar:
     st.markdown("## ⚡ AlgoMarket")
-    st.caption("Decision Lab")
-    st.session_state.dark_mode = st.toggle("Dark mode", value=st.session_state.dark_mode)
+    st.caption("Decision Lab · learn by experimenting")
+    st.radio("Appearance", ["Dark", "Light"], horizontal=True, key="theme_choice", help="Choose the reading mode that feels most comfortable. Your experiments stay intact.")
     st.divider()
-    st.markdown("**Explore**")
+    st.markdown("**Choose your next move**")
     for page in PAGES:
         if st.button(page, key=f"nav_{page}", use_container_width=True, type="primary" if page == st.session_state.page else "secondary"):
             st.session_state.page = page
             st.rerun()
     st.divider()
-    st.caption("Tip: change one thing at a time to understand the mechanism.")
+    st.caption("Best way to learn: run a preset, change one setting, then compare the result.")
 
 page = st.session_state.page
 if page == "Start Here":
@@ -627,5 +698,9 @@ elif page == "Empirical Calibration":
     render_calibration()
 elif page == "Research Notes":
     render_notes()
+elif page == "How to Read the Lab":
+    render_reading_guide()
+elif page == "Project Overview":
+    render_overview()
 
 run_history_panel()
